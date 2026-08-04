@@ -85,7 +85,7 @@ with photo_col:
         st.session_state.last_detection_count = len(detections)
 
     if "last_annotated" in st.session_state:
-        st.image(st.session_state.last_annotated, channels="RGB", use_container_width=True)
+        st.image(st.session_state.last_annotated, channels="RGB")
         if st.session_state.last_detection_count == 0:
             st.warning("No face detected in that photo -- try moving closer or improving lighting.")
 
@@ -96,7 +96,7 @@ with meter_col:
     history = list(st.session_state.history)
 
     df = pd.DataFrame(sorted(counts.items(), key=lambda kv: -kv[1]), columns=["Emotion", "Count"])
-    st.dataframe(df, hide_index=True, use_container_width=True)
+    st.dataframe(df, hide_index=True)
 
     if history:
         buffer = BytesIO()
