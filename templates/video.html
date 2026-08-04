@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Feed</title>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #282c34;
+      flex-direction: column;
+      color: #ffffff;
+      font-family: Arial, sans-serif;
+    }
+    #content {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      height: 100%;
+      padding: 20px;
+      box-sizing: border-box;
+      flex-direction: row;
+    }
+    #video-container {
+      position: relative;
+      width: 100%;
+      max-width: 50%;
+      margin-right: 20px;
+      overflow: hidden;
+      border: 2px solid #61dafb;
+      border-radius: 10px;
+    }
+    #video-feed {
+      width: 100%;
+      height: auto;
+      object-fit: cover;
+      border-radius: 10px;
+    }
+    .mood-meter {
+      background-color: #20232a;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      width: 100%;
+      max-width: 50%;
+      overflow: auto;
+      text-align: right;
+    }
+    .mood-meter h2 {
+      color: #61dafb;
+      text-align: center;
+    }
+    .mood-meter table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+    .mood-meter th, .mood-meter td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+      color: #ffffff;
+    }
+    .mood-meter th {
+      background-color: #4CAF50;
+      color: white;
+      padding-top: 12px;
+      padding-bottom: 12px;
+    }
+    .mood-meter tr.highlight {
+      background-color: #3f51b5;
+    }
+    #hover-meter {
+      display: flex;
+      justify-content: space-between;
+      width: 100%;
+      max-width: 50%;
+      margin-top: 20px;
+      margin-bottom: 20px;
+      background-color: #20232a;
+      padding: 20px;
+      border-radius: 10px;
+      position: relative;
+      overflow: hidden;
+    }
+    .emotion-label {
+      text-align: center;
+      position: relative;
+      width: calc(100% / 7);
+      color: #61dafb;
+      padding: 5px;
+      border-right: 1px solid #ffffff;
+    }
+    .emotion-label:hover {
+      background-color: #333;
+      cursor: pointer;
+    }
+    .emotion-label:last-child {
+      border-right: none;
+    }
+    .hover-indicator {
+      position: absolute;
+      top: -20px;
+      left: 50%;
+      transform: translateX(-50%) rotate(180deg);
+      font-size: 20px;
+      color: #FFEB3B;
+      transition: left 0.1s ease, top 0.1s ease;
+    }
+    .control-buttons {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-top: 20px;
+      z-index: 1;
+    }
+    .control-buttons button {
+      background-color: #61dafb;
+      color: #282c34;
+      border: none;
+      padding: 10px 20px;
+      margin-bottom: 10px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 16px;
+      transition: background-color 0.3s;
+    }
+    .control-buttons button:hover {
+      background-color: #21a1f1;
+    }
+    a {
+      text-decoration: none;
+    }
+    a button {
+      margin-bottom: 0;
+    }
+  </style>
+</head>
+<body>
+  <div id="content">
+    <div id="video-container">
+      <video id="webcam" autoplay playsinline muted style="display:none;"></video>
+      <canvas id="video-feed"></canvas>
+      <div id="webcam-status" style="color:#ff6b6b; text-align:center; padding:10px;"></div>
+    </div>
+    <div class="mood-meter" id="mood-meter">
+      <h2>Mood Meter</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Emotion</th>
+            <th>Count</th>
+          </tr>
+        </thead>
+        <tbody id="mood-data">
+          <!-- Mood data will be inserted here dynamically -->
+        </tbody>
+      </table>
+    </div>
+    <div id="hover-meter">
+      <div class="emotion-label" id="hover-neutral">neutral</div>
+      <div class="emotion-label" id="hover-happy">happy</div>
+      <div class="emotion-label" id="hover-sad">sad</div>
+      <div class="emotion-label" id="hover-angry">angry</div>
+      <div class="emotion-label" id="hover-disgust">disgust</div>
+      <div class="emotion-label" id="hover-fear">fear</div>
+      <div class="emotion-label" id="hover-surprise">surprise</div>
+    </div>
+  </div>
+
+  <div class="control-buttons">
+    <button onclick="stopVideoFeed()">Stop Video Feed</button>
+    <br>
+    <a href="{{ url_for('index') }}"><button>Go to Home</button></a>
+  </div>
+
+  <script>
+    let previousEmotion = null;
+    let emotions = ['neutral', 'happy', 'sad', 'angry', 'disgust', 'fear', 'surprise'];
+    let previousData = {};
+
+    async function fetchEmotionData() {
+      try {
+        let response = await fetch('/emotion_data');
+        let data = await response.json();
+        let moodDataElement = document.getElementById('mood-data');
+        moodDataElement.innerHTML = '';
+        let currentEmotion = null;
+
+        for (let [emotion, count] of Object.entries(data)) {
+          let row = `<tr id="${emotion}"><td>${emotion}</td><td>${count}</td></tr>`;
+          moodDataElement.innerHTML += row;
+          if (currentEmotion === null || data[emotion] > data[currentEmotion]) {
+            currentEmotion = emotion;
+          }
+          if (previousData[emotion] !== undefined && count >= previousData[emotion] + 3) {
+            moveHoverIndicator(emotion);
+          }
+          previousData[emotion] = count;
+        }
+
+        highlightCurrentEmotion(currentEmotion);
+      } catch (error) {
+        console.error('Error fetching emotion data:', error);
+      }
+    }
+
+    function highlightCurrentEmotion(emotion) {
+      if (previousEmotion) {
+        document.getElementById(previousEmotion).classList.remove('highlight');
+      }
+      let row = document.getElementById(emotion);
+      if (row) {
+        row.classList.add('highlight');
+      }
+      previousEmotion = emotion;
+    }
+
+    function moveHoverIndicator(emotion) {
+      emotions.forEach(em => {
+        let indicator = document.getElementById(`hover-${em}`).querySelector('.hover-indicator');
+        if (indicator) {
+          indicator.remove();
+        }
+      });
+
+      let emotionLabel = document.getElementById(`hover-${emotion}`);
+      if (emotionLabel) {
+        let indicator = document.createElement('div');
+        indicator.className = 'hover-indicator';
+        indicator.innerHTML = '&#x25B2;';
+        emotionLabel.appendChild(indicator);
+      }
+    }
+
+    let mediaStream = null;
+    let captureTimer = null;
+    let sending = false;
+
+    const webcamVideo = document.getElementById('webcam');
+    const canvas = document.getElementById('video-feed');
+    const ctx = canvas.getContext('2d');
+    const statusEl = document.getElementById('webcam-status');
+
+    async function startWebcam() {
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        webcamVideo.srcObject = mediaStream;
+        await webcamVideo.play();
+        canvas.width = webcamVideo.videoWidth || 640;
+        canvas.height = webcamVideo.videoHeight || 480;
+        captureTimer = setInterval(captureAndSend, 500);
+      } catch (err) {
+        console.error('Could not access webcam:', err);
+        statusEl.textContent = 'Could not access your camera. Please allow camera access and reload the page.';
+      }
+    }
+
+    async function captureAndSend() {
+      if (sending || !mediaStream) return;
+      sending = true;
+      try {
+        ctx.drawImage(webcamVideo, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        const response = await fetch('/predict_frame', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: dataUrl })
+        });
+        const result = await response.json();
+        drawDetections(result.detections || []);
+      } catch (error) {
+        console.error('Error sending frame:', error);
+      } finally {
+        sending = false;
+      }
+    }
+
+    function drawDetections(detections) {
+      ctx.strokeStyle = '#61dafb';
+      ctx.lineWidth = 2;
+      ctx.font = '18px Arial';
+      ctx.fillStyle = '#ffffff';
+      detections.forEach(({ box, label }) => {
+        const [p, q, r, s] = box;
+        ctx.strokeRect(p, q, r, s);
+        ctx.fillText(label, p, q > 20 ? q - 8 : q + 20);
+      });
+    }
+
+    function stopVideoFeed() {
+      if (captureTimer) {
+        clearInterval(captureTimer);
+        captureTimer = null;
+      }
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+        mediaStream = null;
+      }
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    startWebcam();
+    setInterval(fetchEmotionData, 2000);
+  </script>
+</body>
+</html>
