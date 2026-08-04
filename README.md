@@ -3,9 +3,8 @@ title: Emotion Detection
 emoji: 🙂
 colorFrom: blue
 colorTo: purple
-sdk: streamlit
-sdk_version: 1.38.0
-app_file: streamlit_app.py
+sdk: docker
+app_port: 7860
 pinned: false
 ---
 

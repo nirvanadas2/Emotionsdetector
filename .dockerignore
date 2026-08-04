@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.git/
+.vscode/
+train/
+test/
+*.docx
+*.pdf
+*.xlsx
+train_model.py
