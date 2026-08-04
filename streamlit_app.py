@@ -1,4 +1,5 @@
 import threading
+import time
 from io import BytesIO
 
 import av
@@ -65,17 +66,30 @@ class EmotionProcessor(VideoProcessorBase):
         self.lock = threading.Lock()
         self.emotion_counts = {label: 0 for label in LABELS.values()}
         self.history = []
-        self.frame_idx = 0
         self.last_detections = []
 
-    def recv(self, frame):
-        img = frame.to_ndarray(format="bgr24")
-        self.frame_idx += 1
+        self._frame_lock = threading.Lock()
+        self._latest_frame = None
+        self._stop = False
+        self._worker = threading.Thread(target=self._infer_loop, daemon=True)
+        self._worker.start()
 
-        # Only run detection/inference every 3rd frame; redraw cached boxes on
-        # the frames in between so the video stream itself stays smooth.
-        if self.frame_idx % 3 == 0:
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    def _infer_loop(self):
+        # Runs continuously in the background, always working on the newest
+        # available frame. This is decoupled from recv() on purpose: on a
+        # slow CPU, detection+inference can take longer than one video
+        # frame's worth of time, and blocking recv() on it causes the
+        # video to buffer/stutter. Here it just lags the overlay instead.
+        while not self._stop:
+            with self._frame_lock:
+                frame = self._latest_frame
+                self._latest_frame = None
+
+            if frame is None:
+                time.sleep(0.03)
+                continue
+
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             faces = self.face_cascade.detectMultiScale(gray, 1.3, 5)
 
             detections = []
@@ -91,11 +105,20 @@ class EmotionProcessor(VideoProcessorBase):
                 detections.append((p, q, r, s, label))
             self.last_detections = detections
 
+    def recv(self, frame):
+        img = frame.to_ndarray(format="bgr24")
+
+        with self._frame_lock:
+            self._latest_frame = img
+
         for (p, q, r, s, label) in self.last_detections:
             cv2.rectangle(img, (p, q), (p + r, q + s), (97, 218, 251), 2)
             cv2.putText(img, label, (p, max(q - 10, 20)), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1.5, (255, 255, 255), 2)
 
         return av.VideoFrame.from_ndarray(img, format="bgr24")
+
+    def __del__(self):
+        self._stop = True
 
 
 st.set_page_config(page_title="Real-Time Emotion Detection", layout="wide")
@@ -109,7 +132,10 @@ with video_col:
         key="emotion-detection",
         video_processor_factory=EmotionProcessor,
         rtc_configuration=RTC_CONFIGURATION,
-        media_stream_constraints={"video": True, "audio": False},
+        media_stream_constraints={
+            "video": {"width": {"ideal": 480}, "height": {"ideal": 360}},
+            "audio": False,
+        },
     )
 
 with meter_col:
