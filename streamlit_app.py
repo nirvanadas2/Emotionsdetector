@@ -65,21 +65,33 @@ class EmotionProcessor(VideoProcessorBase):
         self.lock = threading.Lock()
         self.emotion_counts = {label: 0 for label in LABELS.values()}
         self.history = []
+        self.frame_idx = 0
+        self.last_detections = []
 
     def recv(self, frame):
         img = frame.to_ndarray(format="bgr24")
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        faces = self.face_cascade.detectMultiScale(gray, 1.3, 5)
+        self.frame_idx += 1
 
-        for (p, q, r, s) in faces:
-            face_img = cv2.resize(gray[q:q + s, p:p + r], (48, 48))
-            pred = self.model.predict(extract_features(face_img), verbose=0)
-            label = LABELS[pred.argmax()]
+        # Only run detection/inference every 3rd frame; redraw cached boxes on
+        # the frames in between so the video stream itself stays smooth.
+        if self.frame_idx % 3 == 0:
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            faces = self.face_cascade.detectMultiScale(gray, 1.3, 5)
 
-            with self.lock:
-                self.emotion_counts[label] += 1
-                self.history.append(label)
+            detections = []
+            for (p, q, r, s) in faces:
+                face_img = cv2.resize(gray[q:q + s, p:p + r], (48, 48))
+                pred = self.model(extract_features(face_img), training=False).numpy()
+                label = LABELS[int(pred.argmax())]
 
+                with self.lock:
+                    self.emotion_counts[label] += 1
+                    self.history.append(label)
+
+                detections.append((p, q, r, s, label))
+            self.last_detections = detections
+
+        for (p, q, r, s, label) in self.last_detections:
             cv2.rectangle(img, (p, q), (p + r, q + s), (97, 218, 251), 2)
             cv2.putText(img, label, (p, max(q - 10, 20)), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1.5, (255, 255, 255), 2)
 
