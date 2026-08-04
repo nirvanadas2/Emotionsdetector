@@ -1,5 +1,6 @@
 import threading
 import time
+from collections import deque
 from io import BytesIO
 
 import av
@@ -65,7 +66,7 @@ class EmotionProcessor(VideoProcessorBase):
         self.face_cascade = load_face_cascade()
         self.lock = threading.Lock()
         self.emotion_counts = {label: 0 for label in LABELS.values()}
-        self.history = []
+        self.history = deque(maxlen=2000)
         self.last_detections = []
 
         self._frame_lock = threading.Lock()
@@ -155,11 +156,17 @@ with meter_col:
         table_placeholder.dataframe(df, hide_index=True, use_container_width=True)
 
         if history:
-            buffer = BytesIO()
-            pd.DataFrame(history, columns=["Emotion"]).to_excel(buffer, index=False)
+            now = time.time()
+            last_build = st.session_state.get("_excel_built_at", 0)
+            if now - last_build > 5 or "_excel_bytes" not in st.session_state:
+                buffer = BytesIO()
+                pd.DataFrame(history, columns=["Emotion"]).to_excel(buffer, index=False)
+                st.session_state["_excel_bytes"] = buffer.getvalue()
+                st.session_state["_excel_built_at"] = now
+
             download_placeholder.download_button(
                 "Download session data (.xlsx)",
-                data=buffer.getvalue(),
+                data=st.session_state["_excel_bytes"],
                 file_name="emotion_session.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
